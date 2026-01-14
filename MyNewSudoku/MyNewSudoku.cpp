@@ -101,7 +101,7 @@ ID2D1Bitmap* bmpIntro[30]{ nullptr };
 
 dll::GRID* Grid{ nullptr };
 
-
+dll::RANDIT RandIt{};
 
 
 
@@ -174,7 +174,29 @@ int IntroFrame()
 	return frame;
 }
 
+void GameOver()
+{
+	PlaySound(NULL, NULL, NULL);
+	KillTimer(bHwnd, bTimer);
 
+
+
+	bMsg.message = WM_QUIT;
+	bMsg.wParam = 0;
+}
+void InitGame()
+{
+	wcscpy_s(current_player, L"TARLYO");
+	name_set = false;
+
+	level = 1;
+	score = 0;
+	mins = 0;
+	secs = 0;
+
+	if (Grid)delete Grid;
+	Grid = new dll::GRID();
+}
 
 
 
@@ -184,8 +206,23 @@ int IntroFrame()
 
 int APIENTRY wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _In_ LPWSTR lpCmdLine, _In_ int nCmdShow)
 {
-    
+	bIns = hInstance;
+	if (!bIns)ErrExit(eClass);
 
 
-    return (int) msg.wParam;
+
+
+
+
+
+
+
+
+
+
+
+	ClearResources();
+	std::remove(tmp_file);
+
+    return (int) bMsg.wParam;
 }
