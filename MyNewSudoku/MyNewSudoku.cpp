@@ -8,6 +8,7 @@
 #include "FCheck.h"
 #include "sudoku.h"
 #include <chrono>
+#include <clocale>
 
 #pragma comment(lib, "winmm.lib")
 #pragma comment(lib, "d2d1.lib")
@@ -58,9 +59,9 @@ D2D1_RECT_F b1Rect{ 20.0f, 0, scr_width / 3.0f - 50.0f, 50.0f };
 D2D1_RECT_F b2Rect{ scr_width / 3.0f + 20.0f, 0, scr_width * 2.0f / 3.0f - 50.0f, 50.0f };
 D2D1_RECT_F b3Rect{ scr_width * 2.0f / 3.0f + 20.0f, 0, scr_width - 50.0f, 50.0f };
 
-D2D1_RECT_F bTxt1Rect{ 40.0f, 5.0f, scr_width / 3.0f - 50.0f, 50.0f };
-D2D1_RECT_F bTxt2Rect{ scr_width / 3.0f + 40.0f, 5.0f, scr_width * 2.0f / 3.0f - 50.0f, 50.0f };
-D2D1_RECT_F bTxt3Rect{ scr_width * 2.0f / 3.0f + 40.0f, 5.0f, scr_width - 50.0f, 50.0f };
+D2D1_RECT_F b1TxtRect{ 40.0f, 5.0f, scr_width / 3.0f - 40.0f, 50.0f };
+D2D1_RECT_F b2TxtRect{ scr_width / 3.0f + 30.0f, 5.0f, scr_width * 2.0f / 3.0f - 40.0f, 50.0f };
+D2D1_RECT_F b3TxtRect{ scr_width * 2.0f / 3.0f + 30.0f, 5.0f, scr_width - 40.0f, 50.0f };
 
 bool pause = false;
 bool show_help = false;
@@ -89,6 +90,9 @@ ID2D1SolidColorBrush* statBrush{ nullptr };
 ID2D1SolidColorBrush* txtBrush{ nullptr };
 ID2D1SolidColorBrush* hgltBrush{ nullptr };
 ID2D1SolidColorBrush* inactBrush{ nullptr };
+
+ID2D1SolidColorBrush* validBrush{ nullptr };
+ID2D1SolidColorBrush* invalidBrush{ nullptr };
 
 IDWriteFactory* iWriteFactory{ nullptr };
 IDWriteTextFormat* nrmFormat{ nullptr };
@@ -140,6 +144,8 @@ void ClearResources()
 	if (!ClearMem(&txtBrush))LogErr(L"Error releasing txtBrush !");
 	if (!ClearMem(&hgltBrush))LogErr(L"Error releasing hgltBrush !");
 	if (!ClearMem(&inactBrush))LogErr(L"Error releasing inactBrush !");
+	if (!ClearMem(&validBrush))LogErr(L"Error releasing validBrush !");
+	if (!ClearMem(&invalidBrush))LogErr(L"Error releasing invalidBrush !");
 
 	if (!ClearMem(&iWriteFactory))LogErr(L"Error releasing D2D1 WriteFactory !");
 	if (!ClearMem(&nrmFormat))LogErr(L"Error releasing D2D1 nrmTextFormat !");
@@ -294,7 +300,7 @@ LRESULT CALLBACK WinProc(HWND hwnd, UINT ReceivedMsg, WPARAM wParam, LPARAM lPar
 	case WM_SETCURSOR:
 		GetCursorPos(&cur_pos);
 		ScreenToClient(hwnd, &cur_pos);
-		if (LOWORD(lParam == HTCLIENT))
+		if (LOWORD(lParam) == HTCLIENT)
 		{
 			if (!in_client)
 			{
@@ -427,14 +433,224 @@ LRESULT CALLBACK WinProc(HWND hwnd, UINT ReceivedMsg, WPARAM wParam, LPARAM lPar
 	return (LRESULT)(FALSE);
 }
 
+void CreateResources()
+{
+	int result = 0;
+	CheckFile(Ltmp_file, &result);
+	if (result == FILE_EXIST)ErrExit(eStarted);
+	else
+	{
+		std::wofstream start(Ltmp_file);
+		start << L"Game started at: " << std::chrono::system_clock::now();
+		start.close();
+	}
+
+	int win_x = GetSystemMetrics(SM_CXSCREEN) / 2 - (int)(scr_width / 2.0f);
+	int win_y = 100;
+
+	if (GetSystemMetrics(SM_CXSCREEN) < (int)(scr_width) + win_x || GetSystemMetrics(SM_CYSCREEN) < (int)(scr_height) + win_y)
+		ErrExit(eScreen);
+
+	mainIcon = (HICON)(LoadImage(NULL, L".\\res\\main.ico", IMAGE_ICON, 255, 255, LR_LOADFROMFILE));
+	if (!mainIcon)ErrExit(eIcon);
+
+	mainCur = LoadCursorFromFile(L".\\res\\main.ani");
+	outCur = LoadCursorFromFile(L".\\res\\out.ani");
+
+	if (!mainCur || !outCur)ErrExit(eCursor);
+
+	bWinClass.lpszClassName = bWinClassName;
+	bWinClass.hInstance = bIns;
+	bWinClass.lpfnWndProc = &WinProc;
+	bWinClass.hbrBackground = CreateSolidBrush(RGB(10, 10, 10));
+	bWinClass.hIcon = mainIcon;
+	bWinClass.hCursor = mainCur;
+	bWinClass.style = CS_DROPSHADOW;
+
+	if (!RegisterClass(&bWinClass))ErrExit(eClass);
+
+	bHwnd = CreateWindow(bWinClassName, L"ГОТИНО СУДОКУ", WS_CAPTION | WS_SYSMENU, win_x, win_y, (int)(scr_width),
+		(int)(scr_height), NULL, NULL, bIns, NULL);
+	if (!bHwnd)ErrExit(eWindow);
+	else
+	{
+		ShowWindow(bHwnd, SW_SHOWDEFAULT);
+
+		HRESULT hr = D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, &iFactory);
+		if (hr != S_OK)
+		{
+			LogErr(L"Error creating D2D1 main Factory !");
+			ErrExit(eD2D);
+		}
+
+		if (iFactory)
+		{
+			hr = iFactory->CreateHwndRenderTarget(D2D1::RenderTargetProperties(), D2D1::HwndRenderTargetProperties(bHwnd,
+				D2D1::SizeU((UINT32)(scr_width), (UINT32)(scr_height))), &Draw);
+		
+			if (hr != S_OK)
+			{
+				LogErr(L"Error creating D2D1 HwndRenderTarget !");
+				ErrExit(eD2D);
+			}
+		
+			if (Draw)
+			{
+				RECT ClR{};
+				D2D1_SIZE_F hwndR{};
+
+				GetClientRect(bHwnd, &ClR);
+				hwndR = Draw->GetSize();
+			
+				x_scale = static_cast<float>(hwndR.width / (ClR.right - ClR.left));
+				y_scale = static_cast<float>(hwndR.height / (ClR.bottom - ClR.top));
+			
+				D2D1_GRADIENT_STOP gStops[2]{};
+				ID2D1GradientStopCollection* gColl{ nullptr };
+
+				gStops[0].position = 0;
+				gStops[0].color = D2D1::ColorF(D2D1::ColorF::PaleGreen);
+				gStops[1].position = 1.0f;
+				gStops[1].color = D2D1::ColorF(D2D1::ColorF::DarkOliveGreen);
+
+				hr = Draw->CreateGradientStopCollection(gStops, 2, &gColl);
+				if (hr != S_OK)
+				{
+					LogErr(L"Error creating D2D1 GradientStopCollection !");
+					ErrExit(eD2D);
+				}
+
+				if (gColl)
+				{
+					hr = Draw->CreateRadialGradientBrush(D2D1::RadialGradientBrushProperties(D2D1::Point2F(b1Rect.left +
+						((b1Rect.right - b1Rect.left) / 2.0f), 25.0f), D2D1::Point2F(0, 0), 
+						(b1Rect.right - b1Rect.left) / 2.0f, 25.0f), gColl, &b1BckgBrush);
+					hr = Draw->CreateRadialGradientBrush(D2D1::RadialGradientBrushProperties(D2D1::Point2F(b2Rect.left +
+						((b2Rect.right - b2Rect.left) / 2.0f), 25.0f), D2D1::Point2F(0, 0),
+						(b2Rect.right - b2Rect.left) / 2.0f, 25.0f), gColl, &b2BckgBrush);
+					hr = Draw->CreateRadialGradientBrush(D2D1::RadialGradientBrushProperties(D2D1::Point2F(b3Rect.left +
+						((b3Rect.right - b3Rect.left) / 2.0f), 25.0f), D2D1::Point2F(0, 0),
+						(b3Rect.right - b3Rect.left) / 2.0f, 25.0f), gColl, &b3BckgBrush);
+					
+					if (hr != S_OK)
+					{
+						LogErr(L"Error creating D2D1 RadialGradientBrush !");
+						ErrExit(eD2D);
+					}
+				
+					ClearMem(&gColl);
+				}
+
+				hr = Draw->CreateSolidColorBrush(D2D1::ColorF(D2D1::ColorF::CornflowerBlue), &statBrush);
+				hr = Draw->CreateSolidColorBrush(D2D1::ColorF(D2D1::ColorF::DarkBlue), &txtBrush);
+				hr = Draw->CreateSolidColorBrush(D2D1::ColorF(D2D1::ColorF::Gold), &hgltBrush);
+				hr = Draw->CreateSolidColorBrush(D2D1::ColorF(D2D1::ColorF::Firebrick), &inactBrush);
+				hr = Draw->CreateSolidColorBrush(D2D1::ColorF(D2D1::ColorF::Lime), &validBrush);
+				hr = Draw->CreateSolidColorBrush(D2D1::ColorF(D2D1::ColorF::OrangeRed), &invalidBrush);
+
+				if (hr != S_OK)
+				{
+					LogErr(L"Error creating D2D1 SolidColorBrushes !");
+					ErrExit(eD2D);
+				}
+			
+				bmpLogo = Load(L".\\res\\img\\logo.png", Draw);
+				if (!bmpLogo)
+				{
+					LogErr(L"Error loading game logo !");
+					ErrExit(eD2D);
+				}
+			
+				for (int i = 0; i < 30; ++i)
+				{
+					wchar_t name[50]{ L".\\res\\img\\intro\\" };
+					wchar_t add[5]{ L"\0" };
+
+					wsprintf(add, L"%d", i);
+					wcscat_s(name, add);
+					wcscat_s(name, L".png");
+
+					bmpIntro[i] = Load(name, Draw);
+					if (!bmpIntro[i])
+					{
+						LogErr(L"Error loading game Intro !");
+						ErrExit(eD2D);
+					}
+				}
+			}
+		}
+
+		hr = DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory),
+			reinterpret_cast<IUnknown**>(&iWriteFactory));
+		if (hr != S_OK)
+		{
+			LogErr(L"Error creating D2D1 WriteFactory !");
+			ErrExit(eD2D);
+		}
+
+		if (iWriteFactory)
+		{
+			hr = iWriteFactory->CreateTextFormat(L"Copperplate Gothic", NULL, DWRITE_FONT_WEIGHT_EXTRA_BLACK,
+				DWRITE_FONT_STYLE_OBLIQUE, DWRITE_FONT_STRETCH_NORMAL, 10.0f, L"", &nrmFormat);
+			hr = iWriteFactory->CreateTextFormat(L"Copperplate Gothic", NULL, DWRITE_FONT_WEIGHT_EXTRA_BLACK,
+				DWRITE_FONT_STYLE_OBLIQUE, DWRITE_FONT_STRETCH_NORMAL, 28.0f, L"", &midFormat);
+			hr = iWriteFactory->CreateTextFormat(L"Copperplate Gothic", NULL, DWRITE_FONT_WEIGHT_EXTRA_BLACK,
+				DWRITE_FONT_STYLE_OBLIQUE, DWRITE_FONT_STRETCH_NORMAL, 72.0f, L"", &bigFormat);
+			if (hr != S_OK)
+			{
+				LogErr(L"Error creating D2D1 TextFormats !");
+				ErrExit(eD2D);
+			}
+		}
+	}
+
+	Draw->BeginDraw();
+	if (bmpLogo)Draw->DrawBitmap(bmpLogo, D2D1::RectF(0, 0, scr_width, scr_height));
+	Draw->EndDraw();
+	
+	PlaySound(L".\\res\\snd\\intro.wav", NULL, SND_SYNC);
+}
 
 
 
 int APIENTRY wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _In_ LPWSTR lpCmdLine, _In_ int nCmdShow)
 {
+	_wsetlocale(LOCALE_ALL, L"");
+	
 	bIns = hInstance;
 	if (!bIns)ErrExit(eClass);
 
+	CreateResources();
+
+	PlaySound(sound_file, NULL, SND_ASYNC | SND_LOOP);
+
+
+	while (bMsg.message != WM_QUIT)
+	{
+		if ((bRet = PeekMessage(&bMsg, bHwnd, NULL, NULL, PM_REMOVE)) != 0)
+		{
+			if (bRet == -1)ErrExit(eMsg);
+
+			TranslateMessage(&bMsg);
+			DispatchMessage(&bMsg);
+		}
+
+		if (pause)
+		{
+			if (show_help)continue;
+			
+			Draw->BeginDraw();
+			Draw->Clear(D2D1::ColorF(D2D1::ColorF::DarkCyan));
+			Draw->DrawBitmap(bmpIntro[IntroFrame()], D2D1::RectF(0, 0, scr_width, scr_height));
+			if (txtBrush && bigFormat)Draw->DrawTextW(L"ПАУЗА", 6, bigFormat, D2D1::RectF(scr_width / 2.0f - 120.0f,
+				80.0f, scr_width, scr_height), txtBrush);
+			Draw->EndDraw();
+			continue;
+		}
+
+		///////////////////////////////////////////////////////////////////
+
+		
 
 
 
@@ -443,9 +659,56 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance
 
 
 
+		//DRAW THINGS *******************************
+
+		Draw->BeginDraw();
+
+		if (statBrush && txtBrush && hgltBrush && inactBrush && b1BckgBrush && b2BckgBrush && b3BckgBrush && nrmFormat)
+		{
+			Draw->Clear(D2D1::ColorF(D2D1::ColorF::DarkViolet));
+			Draw->FillRectangle(D2D1::RectF(0, 0, scr_width, 50.0f), statBrush);
+
+			Draw->FillRoundedRectangle(D2D1::RoundedRect(b1Rect, 10.0f, 15.0f), b1BckgBrush);
+			Draw->FillRoundedRectangle(D2D1::RoundedRect(b2Rect, 10.0f, 15.0f), b2BckgBrush);
+			Draw->FillRoundedRectangle(D2D1::RoundedRect(b3Rect, 10.0f, 15.0f), b3BckgBrush);
+
+			if (name_set)Draw->DrawTextW(L"ИМЕ НА ИГРАЧ", 13, nrmFormat, b1TxtRect, inactBrush);
+			else
+			{
+				if (b1Hglt)Draw->DrawTextW(L"ИМЕ НА ИГРАЧ", 13, nrmFormat, b1TxtRect, hgltBrush);
+				else Draw->DrawTextW(L"ИМЕ НА ИГРАЧ", 13, nrmFormat, b1TxtRect, txtBrush);
+			}
+			if (b2Hglt)Draw->DrawTextW(L"ЗВУЦИ ON / OFF", 15, nrmFormat, b2TxtRect, hgltBrush);
+			else Draw->DrawTextW(L"ЗВУЦИ ON / OFF", 15, nrmFormat, b2TxtRect, txtBrush);
+			if (b3Hglt)Draw->DrawTextW(L"ПОМОЩ ЗА ИГРАТА", 16, nrmFormat, b3TxtRect, hgltBrush);
+			else Draw->DrawTextW(L"ПОМОЩ ЗА ИГРАТА", 16, nrmFormat, b3TxtRect, txtBrush);
+		}
+
+
+		for (int rows = 0; rows < MAX_ROWS; ++rows)
+		{
+			for (int cols = 0; cols < MAX_COLS; ++cols)
+			{
+				FRECT box{ Grid->get_dims(rows,cols) };
+				if (Grid->value_ok(rows, cols))Draw->DrawRectangle(D2D1::RectF(box.left, box.up, box.right, box.down), validBrush);
+				else Draw->DrawRectangle(D2D1::RectF(box.left, box.up, box.right, box.down), invalidBrush);
+			}
+		}
+
+		
 
 
 
+
+
+
+
+
+		/////////////////////////////////////////////
+		
+		Draw->EndDraw();
+
+	}
 
 	ClearResources();
 	std::remove(tmp_file);
