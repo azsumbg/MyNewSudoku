@@ -90,6 +90,7 @@ ID2D1SolidColorBrush* statBrush{ nullptr };
 ID2D1SolidColorBrush* txtBrush{ nullptr };
 ID2D1SolidColorBrush* hgltBrush{ nullptr };
 ID2D1SolidColorBrush* inactBrush{ nullptr };
+ID2D1SolidColorBrush* gridBrush{ nullptr };
 
 ID2D1SolidColorBrush* validBrush{ nullptr };
 ID2D1SolidColorBrush* invalidBrush{ nullptr };
@@ -146,6 +147,7 @@ void ClearResources()
 	if (!ClearMem(&inactBrush))LogErr(L"Error releasing inactBrush !");
 	if (!ClearMem(&validBrush))LogErr(L"Error releasing validBrush !");
 	if (!ClearMem(&invalidBrush))LogErr(L"Error releasing invalidBrush !");
+	if (!ClearMem(&invalidBrush))LogErr(L"Error releasing gridBrush !");
 
 	if (!ClearMem(&iWriteFactory))LogErr(L"Error releasing D2D1 WriteFactory !");
 	if (!ClearMem(&nrmFormat))LogErr(L"Error releasing D2D1 nrmTextFormat !");
@@ -203,6 +205,7 @@ void InitGame()
 
 	if (Grid)delete Grid;
 	Grid = new dll::GRID();
+	Grid->set_level(1);
 }
 
 INT_PTR CALLBACK DlgProc(HWND hwnd, UINT ReceivedMsg, WPARAM wParam, LPARAM lParam)
@@ -545,8 +548,9 @@ void CreateResources()
 				hr = Draw->CreateSolidColorBrush(D2D1::ColorF(D2D1::ColorF::DarkBlue), &txtBrush);
 				hr = Draw->CreateSolidColorBrush(D2D1::ColorF(D2D1::ColorF::Gold), &hgltBrush);
 				hr = Draw->CreateSolidColorBrush(D2D1::ColorF(D2D1::ColorF::Firebrick), &inactBrush);
-				hr = Draw->CreateSolidColorBrush(D2D1::ColorF(D2D1::ColorF::Lime), &validBrush);
+				hr = Draw->CreateSolidColorBrush(D2D1::ColorF(D2D1::ColorF::Green), &validBrush);
 				hr = Draw->CreateSolidColorBrush(D2D1::ColorF(D2D1::ColorF::OrangeRed), &invalidBrush);
+				hr = Draw->CreateSolidColorBrush(D2D1::ColorF(D2D1::ColorF::Brown), &gridBrush);
 
 				if (hr != S_OK)
 				{
@@ -611,8 +615,6 @@ void CreateResources()
 	PlaySound(L".\\res\\snd\\intro.wav", NULL, SND_SYNC);
 }
 
-
-
 int APIENTRY wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _In_ LPWSTR lpCmdLine, _In_ int nCmdShow)
 {
 	_wsetlocale(LOCALE_ALL, L"");
@@ -665,7 +667,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance
 
 		if (statBrush && txtBrush && hgltBrush && inactBrush && b1BckgBrush && b2BckgBrush && b3BckgBrush && nrmFormat)
 		{
-			Draw->Clear(D2D1::ColorF(D2D1::ColorF::DarkViolet));
+			Draw->Clear(D2D1::ColorF(D2D1::ColorF::Indigo));
 			Draw->FillRectangle(D2D1::RectF(0, 0, scr_width, 50.0f), statBrush);
 
 			Draw->FillRoundedRectangle(D2D1::RoundedRect(b1Rect, 10.0f, 15.0f), b1BckgBrush);
@@ -684,21 +686,62 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance
 			else Draw->DrawTextW(L"ПОМОЩ ЗА ИГРАТА", 16, nrmFormat, b3TxtRect, txtBrush);
 		}
 
+		///////////////////////////////////////////////////
 
 		for (int rows = 0; rows < MAX_ROWS; ++rows)
 		{
 			for (int cols = 0; cols < MAX_COLS; ++cols)
 			{
-				FRECT box{ Grid->get_dims(rows,cols) };
-				if (Grid->value_ok(rows, cols))Draw->DrawRectangle(D2D1::RectF(box.left, box.up, box.right, box.down), validBrush);
-				else Draw->DrawRectangle(D2D1::RectF(box.left, box.up, box.right, box.down), invalidBrush);
+				if (Grid->get_value(rows, cols) != CLEAR_VALUE)
+				{
+					FRECT box{ Grid->get_dims(rows,cols) };
+					if (Grid->value_ok(rows, cols))Draw->FillRectangle(D2D1::RectF(box.left, box.up, box.right, box.down), validBrush);
+					else Draw->FillRectangle(D2D1::RectF(box.left, box.up, box.right, box.down), invalidBrush);
+				}
 			}
 		}
 
-		
+		if (gridBrush)
+		{
+			for (int i = 0; i < MAX_ROWS; ++i)
+			{
+				FRECT temp_dims{ Grid->get_dims(i, 8) };
+				float line_y = temp_dims.up;
+				if (i % 3 == 0)Draw->DrawLine(D2D1::Point2F(5.0f, line_y), D2D1::Point2F(temp_dims.right, line_y), gridBrush,3.0f);
+				else Draw->DrawLine(D2D1::Point2F(5.0f, line_y), D2D1::Point2F(temp_dims.right, line_y), gridBrush);
+			
+				if (i == 8)Draw->DrawLine(D2D1::Point2F(5.0f, temp_dims.down),
+					D2D1::Point2F(temp_dims.right, temp_dims.down), gridBrush, 3.0f);
+			}
 
+			for (int i = 0; i < MAX_COLS; ++i)
+			{
+				FRECT temp_dims{ Grid->get_dims(8, i) };
+				float line_x = temp_dims.left;
+				if (i % 3 == 0)Draw->DrawLine(D2D1::Point2F(line_x, sky + 5.0f), 
+					D2D1::Point2F(line_x, temp_dims.down), gridBrush, 3.0f);
+				else Draw->DrawLine(D2D1::Point2F(line_x, sky + 5.0f), D2D1::Point2F(line_x, temp_dims.down), gridBrush);
+			
+				if (i == 8)Draw->DrawLine(D2D1::Point2F(temp_dims.right, sky + 5.0f),
+					D2D1::Point2F(temp_dims.right, temp_dims.down), gridBrush, 3.0f);
+			}
+		}
 
-
+		for (int rows = 0; rows < MAX_ROWS; rows++)
+		{
+			for (int cols = 0; cols < MAX_ROWS; cols++)
+			{
+				if (Grid->get_value(rows, cols) != CLEAR_VALUE)
+				{
+					FRECT temp_dim{ Grid->get_dims(rows,cols) };
+					D2D1_RECT_F numRect{ temp_dim.left + 5.0f,temp_dim.up + 5.0f,temp_dim.right - 5.0f,temp_dim.down - 5.0f };
+					wchar_t num[2]{ L"\0" };
+					wsprintf(num, L"%d", Grid->get_value(rows, cols));
+				
+					if (hgltBrush)Draw->DrawTextW(num, 2, midFormat, numRect, hgltBrush);
+				}
+			}
+		}
 
 
 
