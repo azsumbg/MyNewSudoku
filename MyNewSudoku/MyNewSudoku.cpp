@@ -109,8 +109,6 @@ dll::GRID* Grid{ nullptr };
 
 dll::RANDIT RandIt{};
 
-
-
 /////////////////////////////////////////////////////////
 
 template<typename T>concept HasRelease = requires(T check)
@@ -429,6 +427,50 @@ LRESULT CALLBACK WinProc(HWND hwnd, UINT ReceivedMsg, WPARAM wParam, LPARAM lPar
 		}
 		break;
 
+	case WM_LBUTTONDOWN:
+		if (!pause)
+		{
+			float cur_x{ LOWORD(lParam) * x_scale };
+			float cur_y{ HIWORD(lParam) * y_scale };
+
+			for (int rows = 0; rows < MAX_ROWS; ++rows)
+			{
+				for (int cols = 0; cols < MAX_ROWS; ++cols)
+				{
+					FRECT box{ Grid->get_dims(rows,cols) };
+					if (cur_x >= box.left && cur_x <= box.right && cur_y >= box.up && cur_y <= box.down)
+					{
+						int curr_value{ Grid->get_value(rows,cols) };
+						if (curr_value == CLEAR_VALUE)curr_value = 1;
+						else
+						{
+							++curr_value;
+							if (curr_value > 9)curr_value = 1;
+						}
+						Grid->set_value(rows, cols, curr_value);
+					}
+				}
+			}
+		}
+		break;
+
+	case WM_RBUTTONDOWN:
+		if (!pause)
+		{
+			float cur_x{ LOWORD(lParam) * x_scale };
+			float cur_y{ HIWORD(lParam) * y_scale };
+
+			for (int rows = 0; rows < MAX_ROWS; ++rows)
+			{
+				for (int cols = 0; cols < MAX_ROWS; ++cols)
+				{
+					FRECT box{ Grid->get_dims(rows,cols) };
+					if (cur_x >= box.left && cur_x <= box.right && cur_y >= box.up && cur_y <= box.down)
+					Grid->set_value(rows, cols, CLEAR_VALUE);
+				}
+			}
+		}
+		break;
 
 	default: return DefWindowProc(hwnd, ReceivedMsg, wParam, lParam);
 	}
