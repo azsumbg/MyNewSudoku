@@ -105,7 +105,7 @@ namespace dll
 
 		void set_value(int row, int col, int new_value);
 		bool value_ok(int row, int col)const;
-
+		void clear_grid();
 		void set_level(int level);
 
 		FRECT get_dims(int row, int col) const;

@@ -101,6 +101,7 @@ IDWriteTextFormat* midFormat{ nullptr };
 IDWriteTextFormat* bigFormat{ nullptr };
 
 ID2D1Bitmap* bmpLogo{ nullptr };
+ID2D1Bitmap* bmpLevelUp{ nullptr };
 ID2D1Bitmap* bmpIntro[30]{ nullptr };
 
 /////////////////////////////////////////////////////////
@@ -145,7 +146,7 @@ void ClearResources()
 	if (!ClearMem(&inactBrush))LogErr(L"Error releasing inactBrush !");
 	if (!ClearMem(&validBrush))LogErr(L"Error releasing validBrush !");
 	if (!ClearMem(&invalidBrush))LogErr(L"Error releasing invalidBrush !");
-	if (!ClearMem(&invalidBrush))LogErr(L"Error releasing gridBrush !");
+	if (!ClearMem(&gridBrush))LogErr(L"Error releasing gridBrush !");
 
 	if (!ClearMem(&iWriteFactory))LogErr(L"Error releasing D2D1 WriteFactory !");
 	if (!ClearMem(&nrmFormat))LogErr(L"Error releasing D2D1 nrmTextFormat !");
@@ -153,6 +154,7 @@ void ClearResources()
 	if (!ClearMem(&bigFormat))LogErr(L"Error releasing D2D1 bigTextFormat !");
 
 	if (!ClearMem(&bmpLogo))LogErr(L"Error releasing D2D1 bmpLogo !");
+	if (!ClearMem(&bmpLevelUp))LogErr(L"Error releasing D2D1 bmpLevelUp !");
 
 	for (int i = 0; i < 30; ++i)if (!ClearMem(&bmpIntro[i]))LogErr(L"Error releasing D2D1 bmpIntro !");
 }
@@ -168,7 +170,7 @@ void ErrExit(int what)
 int IntroFrame()
 {
 	static int frame = 0;
-	static int delay = 5;
+	static int delay = 3;
 
 	--delay;
 	if (delay < 0)
@@ -204,6 +206,33 @@ void InitGame()
 	if (Grid)delete Grid;
 	Grid = new dll::GRID();
 	Grid->set_level(1);
+}
+void LevelUp()
+{
+	Draw->BeginDraw();
+	if (bmpLogo)Draw->DrawBitmap(bmpLevelUp, D2D1::RectF(0, 0, scr_width, scr_height));
+	Draw->EndDraw();
+
+	if (sound)
+	{
+		PlaySound(NULL, NULL, NULL);
+		PlaySound(L".\\res\\snd\\levelup.wav", NULL, SND_SYNC);
+		PlaySound(sound_file, NULL, SND_ASYNC | SND_LOOP);
+	}
+	else Sleep(3000);
+
+	int time_needed = 300 * level;
+	if (time_needed - secs > 0)score += 50 * level + time_needed - secs;
+	else score += 50 * level;
+
+	++level;
+	
+	mins = 0;
+	secs = 0;
+
+	if (Grid)delete Grid;
+	Grid = new dll::GRID();
+	Grid->set_level(level);
 }
 
 INT_PTR CALLBACK DlgProc(HWND hwnd, UINT ReceivedMsg, WPARAM wParam, LPARAM lParam)
@@ -435,7 +464,7 @@ LRESULT CALLBACK WinProc(HWND hwnd, UINT ReceivedMsg, WPARAM wParam, LPARAM lPar
 
 			for (int rows = 0; rows < MAX_ROWS; ++rows)
 			{
-				for (int cols = 0; cols < MAX_ROWS; ++cols)
+				for (int cols = 0; cols < MAX_COLS; ++cols)
 				{
 					FRECT box{ Grid->get_dims(rows,cols) };
 					if (cur_x >= box.left && cur_x <= box.right && cur_y >= box.up && cur_y <= box.down)
@@ -448,7 +477,16 @@ LRESULT CALLBACK WinProc(HWND hwnd, UINT ReceivedMsg, WPARAM wParam, LPARAM lPar
 							if (curr_value > 9)curr_value = 1;
 						}
 						Grid->set_value(rows, cols, curr_value);
+						if (sound)mciSendString(L"play .\\res\\put.wav", NULL, NULL, NULL);
 					}
+				}
+			}
+
+			for (int rows = 0; rows < MAX_ROWS; ++rows)
+			{
+				for (int cols = 0; cols < MAX_COLS; ++cols)
+				{
+					Grid->set_value(rows, cols, Grid->get_value(rows, cols));
 				}
 			}
 		}
@@ -462,11 +500,20 @@ LRESULT CALLBACK WinProc(HWND hwnd, UINT ReceivedMsg, WPARAM wParam, LPARAM lPar
 
 			for (int rows = 0; rows < MAX_ROWS; ++rows)
 			{
-				for (int cols = 0; cols < MAX_ROWS; ++cols)
+				for (int cols = 0; cols < MAX_COLS; ++cols)
 				{
 					FRECT box{ Grid->get_dims(rows,cols) };
 					if (cur_x >= box.left && cur_x <= box.right && cur_y >= box.up && cur_y <= box.down)
 					Grid->set_value(rows, cols, CLEAR_VALUE);
+					if (sound)mciSendString(L"play .\\res\\put.wav", NULL, NULL, NULL);
+				}
+			}
+
+			for (int rows = 0; rows < MAX_ROWS; ++rows)
+			{
+				for (int cols = 0; cols < MAX_COLS; ++cols)
+				{
+					Grid->set_value(rows, cols, Grid->get_value(rows, cols));
 				}
 			}
 		}
@@ -606,6 +653,13 @@ void CreateResources()
 					LogErr(L"Error loading game logo !");
 					ErrExit(eD2D);
 				}
+
+				bmpLevelUp = Load(L".\\res\\img\\LevelUp.png", Draw);
+				if (!bmpLevelUp)
+				{
+					LogErr(L"Error loading game LevelUp !");
+					ErrExit(eD2D);
+				}
 			
 				for (int i = 0; i < 30; ++i)
 				{
@@ -694,14 +748,16 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance
 
 		///////////////////////////////////////////////////////////////////
 
-		
+		for (int rows = 0; rows < MAX_ROWS; ++rows)
+		{
+			for (int cols = 0; cols < MAX_COLS; ++cols)
+			{
+				int boxes_ok = 0;
 
-
-
-
-
-
-
+				if (Grid->get_value(rows, cols) != CLEAR_VALUE && Grid->value_ok(rows, cols))++boxes_ok;
+				if (boxes_ok == 81)LevelUp();
+			}
+		}
 
 		//DRAW THINGS *******************************
 
