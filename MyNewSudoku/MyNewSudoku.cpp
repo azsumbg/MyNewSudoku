@@ -98,6 +98,7 @@ ID2D1SolidColorBrush* invalidBrush{ nullptr };
 IDWriteFactory* iWriteFactory{ nullptr };
 IDWriteTextFormat* nrmFormat{ nullptr };
 IDWriteTextFormat* midFormat{ nullptr };
+IDWriteTextFormat* statFormat{ nullptr };
 IDWriteTextFormat* bigFormat{ nullptr };
 
 ID2D1Bitmap* bmpLogo{ nullptr };
@@ -152,6 +153,7 @@ void ClearResources()
 	if (!ClearMem(&nrmFormat))LogErr(L"Error releasing D2D1 nrmTextFormat !");
 	if (!ClearMem(&midFormat))LogErr(L"Error releasing D2D1 midTextFormat !");
 	if (!ClearMem(&bigFormat))LogErr(L"Error releasing D2D1 bigTextFormat !");
+	if (!ClearMem(&statFormat))LogErr(L"Error releasing D2D1 statTextFormat !");
 
 	if (!ClearMem(&bmpLogo))LogErr(L"Error releasing D2D1 bmpLogo !");
 	if (!ClearMem(&bmpLevelUp))LogErr(L"Error releasing D2D1 bmpLevelUp !");
@@ -323,8 +325,12 @@ LRESULT CALLBACK WinProc(HWND hwnd, UINT ReceivedMsg, WPARAM wParam, LPARAM lPar
 
 	case WM_TIMER:
 		if (pause)break;
-		++mins;
-		secs = mins / 60;
+		++secs;
+		if (secs > 59)
+		{
+			secs = 0;
+			++mins;
+		}
 		break;
 
 	case WM_SETCURSOR:
@@ -639,7 +645,7 @@ void CreateResources()
 				hr = Draw->CreateSolidColorBrush(D2D1::ColorF(D2D1::ColorF::Firebrick), &inactBrush);
 				hr = Draw->CreateSolidColorBrush(D2D1::ColorF(D2D1::ColorF::Green), &validBrush);
 				hr = Draw->CreateSolidColorBrush(D2D1::ColorF(D2D1::ColorF::OrangeRed), &invalidBrush);
-				hr = Draw->CreateSolidColorBrush(D2D1::ColorF(D2D1::ColorF::Brown), &gridBrush);
+				hr = Draw->CreateSolidColorBrush(D2D1::ColorF(D2D1::ColorF::Lime), &gridBrush);
 
 				if (hr != S_OK)
 				{
@@ -696,6 +702,8 @@ void CreateResources()
 				DWRITE_FONT_STYLE_OBLIQUE, DWRITE_FONT_STRETCH_NORMAL, 28.0f, L"", &midFormat);
 			hr = iWriteFactory->CreateTextFormat(L"Copperplate Gothic", NULL, DWRITE_FONT_WEIGHT_EXTRA_BLACK,
 				DWRITE_FONT_STYLE_OBLIQUE, DWRITE_FONT_STRETCH_NORMAL, 72.0f, L"", &bigFormat);
+			hr = iWriteFactory->CreateTextFormat(L"Copperplate Gothic", NULL, DWRITE_FONT_WEIGHT_EXTRA_BLACK,
+				DWRITE_FONT_STYLE_OBLIQUE, DWRITE_FONT_STRETCH_NORMAL, 16.0f, L"", &statFormat);
 			if (hr != S_OK)
 			{
 				LogErr(L"Error creating D2D1 TextFormats !");
@@ -748,12 +756,12 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance
 
 		///////////////////////////////////////////////////////////////////
 
+		int boxes_ok = 0;
+
 		for (int rows = 0; rows < MAX_ROWS; ++rows)
 		{
 			for (int cols = 0; cols < MAX_COLS; ++cols)
 			{
-				int boxes_ok = 0;
-
 				if (Grid->get_value(rows, cols) != CLEAR_VALUE && Grid->value_ok(rows, cols))++boxes_ok;
 				if (boxes_ok == 81)LevelUp();
 			}
@@ -805,11 +813,11 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance
 			{
 				FRECT temp_dims{ Grid->get_dims(i, 8) };
 				float line_y = temp_dims.up;
-				if (i % 3 == 0)Draw->DrawLine(D2D1::Point2F(5.0f, line_y), D2D1::Point2F(temp_dims.right, line_y), gridBrush,3.0f);
+				if (i % 3 == 0)Draw->DrawLine(D2D1::Point2F(5.0f, line_y), D2D1::Point2F(temp_dims.right, line_y), gridBrush,5.0f);
 				else Draw->DrawLine(D2D1::Point2F(5.0f, line_y), D2D1::Point2F(temp_dims.right, line_y), gridBrush);
 			
 				if (i == 8)Draw->DrawLine(D2D1::Point2F(5.0f, temp_dims.down),
-					D2D1::Point2F(temp_dims.right, temp_dims.down), gridBrush, 3.0f);
+					D2D1::Point2F(temp_dims.right, temp_dims.down), gridBrush, 5.0f);
 			}
 
 			for (int i = 0; i < MAX_COLS; ++i)
@@ -841,14 +849,46 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance
 			}
 		}
 
+		if (gridBrush && statFormat)
+		{
+			wchar_t stat_txt[150]{ L"играч: " };
+			wchar_t add[5]{L"\0"};
+			int size = 0;
 
+			wcscat_s(stat_txt, current_player);
 
+			wsprintf(add, L"%d", level);
+			wcscat_s(stat_txt, L", ниво: ");
+			wcscat_s(stat_txt, add);
 
+			wsprintf(add, L"%d", score);
+			wcscat_s(stat_txt, L", точки: ");
+			wcscat_s(stat_txt, add);
+
+			wsprintf(add, L"%d", mins);
+			wcscat_s(stat_txt, L", време: ");
+			if (mins < 10)wcscat_s(stat_txt, L"0");
+			wcscat_s(stat_txt, add);
+			wcscat_s(stat_txt, L" : ");
+			if (secs < 10)
+			{
+				wcscat_s(stat_txt, L"0");
+			}
+			wsprintf(add, L"%d", secs);
+			wcscat_s(stat_txt, add);
+
+			for (int i = 0; i < 150; ++i)
+			{
+				if (stat_txt[i] != '\0')++size;
+				else break;
+			}
+
+			Draw->DrawTextW(stat_txt, size, statFormat, D2D1::RectF(5.0f, ground + 5.0f, scr_width, scr_height), gridBrush);
+		}
 
 		/////////////////////////////////////////////
 		
 		Draw->EndDraw();
-
 	}
 
 	ClearResources();
