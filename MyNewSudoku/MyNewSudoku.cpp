@@ -72,6 +72,8 @@ bool b1Hglt = false;
 bool b2Hglt = false;
 bool b3Hglt = false;
 
+bool turn_the_game = false;
+
 wchar_t current_player[16]{ L"TARLYO" };
 
 int level = 1;
@@ -102,7 +104,11 @@ IDWriteTextFormat* statFormat{ nullptr };
 IDWriteTextFormat* bigFormat{ nullptr };
 
 ID2D1Bitmap* bmpLogo{ nullptr };
+ID2D1Bitmap* bmpRecord{ nullptr };
+ID2D1Bitmap* bmpFirstRecord{ nullptr };
+ID2D1Bitmap* bmpNoRecord{ nullptr };
 ID2D1Bitmap* bmpLevelUp{ nullptr };
+ID2D1Bitmap* bmpVictory{ nullptr };
 ID2D1Bitmap* bmpIntro[30]{ nullptr };
 
 /////////////////////////////////////////////////////////
@@ -157,6 +163,10 @@ void ClearResources()
 
 	if (!ClearMem(&bmpLogo))LogErr(L"Error releasing D2D1 bmpLogo !");
 	if (!ClearMem(&bmpLevelUp))LogErr(L"Error releasing D2D1 bmpLevelUp !");
+	if (!ClearMem(&bmpVictory))LogErr(L"Error releasing D2D1 bmpVictory !");
+	if (!ClearMem(&bmpRecord))LogErr(L"Error releasing D2D1 bmpRecord !");
+	if (!ClearMem(&bmpFirstRecord))LogErr(L"Error releasing D2D1 bmpFirstRecord !");
+	if (!ClearMem(&bmpNoRecord))LogErr(L"Error releasing D2D1 bmpNoRecord !");
 
 	for (int i = 0; i < 30; ++i)if (!ClearMem(&bmpIntro[i]))LogErr(L"Error releasing D2D1 bmpIntro !");
 }
@@ -184,13 +194,80 @@ int IntroFrame()
 
 	return frame;
 }
+BOOL CheckRecord()
+{
+	if (score < 1)return no_record;
 
+	int result = 0;
+	CheckFile(record_file, &result);
+
+	if (result == FILE_NOT_EXIST)
+	{
+		std::wofstream rec(record_file);
+		rec << score << std::endl;
+		for (int i = 0; i < 16; ++i)rec << static_cast<int>(current_player[i]) << std::endl;
+		rec.close();
+		return first_record;
+	}
+	else
+	{
+		std::wifstream check(record_file);
+		check >> result;
+		check.close();
+	}
+
+	if (score > result)
+	{
+		std::wofstream rec(record_file);
+		rec << score << std::endl;
+		for (int i = 0; i < 16; ++i)rec << static_cast<int>(current_player[i]) << std::endl;
+		rec.close();
+		return record;
+	}
+
+	return no_record;
+}
 void GameOver()
 {
 	PlaySound(NULL, NULL, NULL);
 	KillTimer(bHwnd, bTimer);
 
+	if (turn_the_game)
+	{
+		score += 1000;
+		Draw->BeginDraw();
+		Draw->DrawBitmap(bmpVictory, D2D1::RectF(0, 0, scr_width, scr_height));
+		Draw->EndDraw();
+		if (sound)PlaySound(L".\\res\\snd\\victory.wav", NULL, SND_SYNC);
+		else Sleep(3000);
+	}
 
+	switch (CheckRecord())
+	{
+	case no_record:
+		Draw->BeginDraw();
+		Draw->DrawBitmap(bmpNoRecord, D2D1::RectF(0, 0, scr_width, scr_height));
+		Draw->EndDraw();
+		if (sound)PlaySound(L".\\res\\snd\\loose.wav", NULL, SND_SYNC);
+		else Sleep(3000);
+		break;
+
+	case first_record:
+		Draw->BeginDraw();
+		Draw->DrawBitmap(bmpFirstRecord, D2D1::RectF(0, 0, scr_width, scr_height));
+		Draw->EndDraw();
+		if (sound)PlaySound(L".\\res\\snd\\record.wav", NULL, SND_SYNC);
+		else Sleep(3000);
+		break;
+
+	case record:
+		Draw->BeginDraw();
+		Draw->DrawBitmap(bmpRecord, D2D1::RectF(0, 0, scr_width, scr_height));
+		Draw->EndDraw();
+		if (sound)PlaySound(L".\\res\\snd\\record.wav", NULL, SND_SYNC);
+		else Sleep(3000);
+		break;
+	}
 
 	bMsg.message = WM_QUIT;
 	bMsg.wParam = 0;
@@ -229,6 +306,12 @@ void LevelUp()
 
 	++level;
 	
+	if (level > 5)
+	{
+		turn_the_game = true;
+		GameOver();
+	}
+
 	mins = 0;
 	secs = 0;
 
@@ -449,7 +532,7 @@ LRESULT CALLBACK WinProc(HWND hwnd, UINT ReceivedMsg, WPARAM wParam, LPARAM lPar
 				pause = false;
 				break;
 			}
-			//LevelUp();
+			LevelUp();
 			break;
 
 		case mExit:
@@ -463,7 +546,40 @@ LRESULT CALLBACK WinProc(HWND hwnd, UINT ReceivedMsg, WPARAM wParam, LPARAM lPar
 		break;
 
 	case WM_LBUTTONDOWN:
-		if (!pause)
+		if (HIWORD(lParam) * y_scale <= 50)
+		{
+			if (LOWORD(lParam) * x_scale >= b1Rect.left && LOWORD(lParam) * x_scale <= b1Rect.right)
+			{
+				if (name_set)
+				{
+					if (sound)mciSendString(L"play .\\res\\snd\\negative.wav", NULL, NULL, NULL);
+					break;
+				}
+				if (sound)mciSendString(L"play .\\res\\snd\\select.wav", NULL, NULL, NULL);
+				if (DialogBox(bIns, MAKEINTRESOURCE(IDD_PLAYER), hwnd, &DlgProc) == IDOK)name_set = true;
+				break;
+			}
+			if (LOWORD(lParam) * x_scale >= b2Rect.left && LOWORD(lParam) * x_scale <= b2Rect.right)
+			{
+				if (sound)mciSendString(L"play .\\res\\snd\\select.wav", NULL, NULL, NULL);
+
+				if (sound)
+				{
+					sound = false;
+					PlaySound(NULL, NULL, NULL);
+					break;
+				}
+				else
+				{
+					sound = true;
+					PlaySound(sound_file, NULL, SND_ASYNC|SND_LOOP);
+					break;
+				}
+			}
+
+
+		}
+		else if (!pause)
 		{
 			float cur_x{ LOWORD(lParam) * x_scale };
 			float cur_y{ HIWORD(lParam) * y_scale };
@@ -483,7 +599,7 @@ LRESULT CALLBACK WinProc(HWND hwnd, UINT ReceivedMsg, WPARAM wParam, LPARAM lPar
 							if (curr_value > 9)curr_value = 1;
 						}
 						Grid->set_value(rows, cols, curr_value);
-						if (sound)mciSendString(L"play .\\res\\put.wav", NULL, NULL, NULL);
+						if (sound)mciSendString(L"play .\\res\\snd\\put.wav", NULL, NULL, NULL);
 					}
 				}
 			}
@@ -511,7 +627,7 @@ LRESULT CALLBACK WinProc(HWND hwnd, UINT ReceivedMsg, WPARAM wParam, LPARAM lPar
 					FRECT box{ Grid->get_dims(rows,cols) };
 					if (cur_x >= box.left && cur_x <= box.right && cur_y >= box.up && cur_y <= box.down)
 					Grid->set_value(rows, cols, CLEAR_VALUE);
-					if (sound)mciSendString(L"play .\\res\\put.wav", NULL, NULL, NULL);
+					if (sound)mciSendString(L"play .\\res\\snd\\put.wav", NULL, NULL, NULL);
 				}
 			}
 
@@ -660,10 +776,38 @@ void CreateResources()
 					ErrExit(eD2D);
 				}
 
+				bmpRecord = Load(L".\\res\\img\\record.png", Draw);
+				if (!bmpRecord)
+				{
+					LogErr(L"Error loading game record bmp !");
+					ErrExit(eD2D);
+				}
+
+				bmpFirstRecord = Load(L".\\res\\img\\firstrecord.png", Draw);
+				if (!bmpFirstRecord)
+				{
+					LogErr(L"Error loading game first record bmp !");
+					ErrExit(eD2D);
+				}
+
+				bmpNoRecord = Load(L".\\res\\img\\norecord.png", Draw);
+				if (!bmpNoRecord)
+				{
+					LogErr(L"Error loading game no record bmp !");
+					ErrExit(eD2D);
+				}
+
 				bmpLevelUp = Load(L".\\res\\img\\LevelUp.png", Draw);
 				if (!bmpLevelUp)
 				{
 					LogErr(L"Error loading game LevelUp !");
+					ErrExit(eD2D);
+				}
+
+				bmpVictory = Load(L".\\res\\img\\Victory.png", Draw);
+				if (!bmpVictory)
+				{
+					LogErr(L"Error loading game Victory !");
 					ErrExit(eD2D);
 				}
 			
