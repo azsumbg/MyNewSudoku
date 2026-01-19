@@ -319,6 +319,150 @@ void LevelUp()
 	Grid = new dll::GRID();
 	Grid->set_level(level);
 }
+void HallOfFame()
+{
+	int result = 0;
+	CheckFile(record_file, &result);
+
+	if (result == FILE_NOT_EXIST)
+	{
+		if (sound)mciSendString(L"play .\\res\\snd\\negative.wav", NULL, NULL, NULL);
+		MessageBox(bHwnd, L"Все още липсва рекорд на играта !\n\nПостарай се повече !", L"Липсва файл !",
+			MB_OK | MB_APPLMODAL | MB_ICONERROR);
+		return;
+	}
+
+	wchar_t rec_txt[75]{ L"НАЙ-ДОБЪР ИГРАЧ: " };
+	wchar_t add[5]{ L"\0" };
+
+	wchar_t saved_player[16]{ L"\0" };
+	int saved_score = 0;
+
+	std::wifstream rec{ record_file };
+	rec >> saved_score;
+	for (int i = 0; i < 16; ++i)
+	{
+		int letter = 0;
+		rec >> letter;
+		saved_player[i] = static_cast<wchar_t>(letter);
+	}
+	rec.close();
+
+	wsprintf(add, L"%d", saved_score);
+	wcscat_s(rec_txt, saved_player);
+	wcscat_s(rec_txt, L"\n\nСВЕТОВЕН РЕКОРД: ");
+	wcscat_s(rec_txt, add);
+
+	result = 0;
+	for (int i = 0; i < 75; ++i)
+	{
+		if (rec_txt[i] != '\0')++result;
+		else break;
+	}
+
+	Draw->BeginDraw();
+	Draw->Clear(D2D1::ColorF(D2D1::ColorF::DarkCyan));
+	if (midFormat && hgltBrush)Draw->DrawTextW(rec_txt, result, midFormat, D2D1::RectF(10.0f, 80.0f, scr_width, scr_height), 
+		hgltBrush);
+	Draw->EndDraw();
+
+	if (sound)mciSendString(L"play .\\res\\snd\\showrecord.wav", NULL, NULL, NULL);
+
+	Sleep(3500);
+}
+void SaveGame()
+{
+	int result = 0;
+	CheckFile(save_file, &result);
+	if (result == FILE_EXIST)
+	{
+		if (sound)mciSendString(L"play .\\res\\snd\\exclamation.wav", NULL, NULL, NULL);
+		if (MessageBox(bHwnd, L"Има предишна записана игра, която ще изгубиш !\n\nНаистина ли я презаписваш ?", L"Презапис",
+			MB_YESNO | MB_APPLMODAL | MB_ICONQUESTION) == IDNO)return;
+	}
+
+	std::wofstream save(save_file);
+	
+	save << level << std::endl;
+	save << score << std::endl;
+	save << mins << std::endl;
+	save << secs << std::endl;
+
+	for (int i = 0; i < 16; ++i)save << static_cast<int>(current_player[i]) << std::endl;
+	save << name_set << std::endl;
+	save << turn_the_game << std::endl;
+
+	for (int rows = 0; rows < MAX_ROWS; ++rows)
+	{
+		for (int cols = 0; cols < MAX_COLS; ++cols)
+		{
+			save << Grid->get_value(rows, cols) << std::endl;
+		}
+	}
+
+	if (sound)mciSendString(L"play .\\res\\snd\\save.wav", NULL, NULL, NULL);
+	MessageBox(bHwnd, L"Играта е записана !", L"Запис", MB_OK | MB_APPLMODAL | MB_ICONINFORMATION);
+}
+void LoadGame()
+{
+	int result = 0;
+	CheckFile(save_file, &result);
+
+	if (result == FILE_NOT_EXIST)
+	{
+		if (sound)mciSendString(L"play .\\res\\snd\\negative.wav", NULL, NULL, NULL);
+		MessageBox(bHwnd, L"Все още няма записана игра !\n\nПостарай се повече !", L"Липсва файл !",
+			MB_OK | MB_APPLMODAL | MB_ICONERROR);
+		return;
+	}
+	else
+	{
+		if (sound)mciSendString(L"play .\\res\\snd\\exclamation.wav", NULL, NULL, NULL);
+		if (MessageBox(bHwnd, L"Настоящата игра ще бъде изгубена !\n\nНаистина ли я презаписваш ?", L"Презапис",
+			MB_YESNO | MB_APPLMODAL | MB_ICONQUESTION) == IDNO)return;
+	}
+
+	if (Grid)delete Grid;
+	Grid = new dll::GRID();
+	Grid->set_level(level);
+
+	std::wifstream save(save_file);
+
+	save >> level;
+	save >> score;
+	save >> mins;
+	save >> secs;
+
+	for (int i = 0; i < 16; ++i)
+	{
+		int letter = 0;
+		save >> letter;
+		current_player[i] = static_cast<wchar_t>(letter);
+	}
+	save >> name_set;
+	save >> turn_the_game;
+
+	for (int rows = 0; rows < MAX_ROWS; ++rows)
+	{
+		for (int cols = 0; cols < MAX_COLS; ++cols)
+		{
+			int avalue = CLEAR_VALUE;
+			save >> avalue;
+			Grid->set_value(rows, cols, avalue);
+		}
+	}
+
+	for (int rows = 0; rows < MAX_ROWS; ++rows)
+	{
+		for (int cols = 0; cols < MAX_COLS; ++cols)
+		{
+			Grid->set_value(rows, cols, Grid->get_value(rows, cols));
+		}
+	}
+
+	if (sound)mciSendString(L"play .\\res\\snd\\save.wav", NULL, NULL, NULL);
+	MessageBox(bHwnd, L"Играта е заредена !", L"Зареждане", MB_OK | MB_APPLMODAL | MB_ICONINFORMATION);
+}
 
 INT_PTR CALLBACK DlgProc(HWND hwnd, UINT ReceivedMsg, WPARAM wParam, LPARAM lParam)
 {
@@ -537,11 +681,25 @@ LRESULT CALLBACK WinProc(HWND hwnd, UINT ReceivedMsg, WPARAM wParam, LPARAM lPar
 
 		case mExit:
 			SendMessage(hwnd, WM_CLOSE, NULL, NULL);
+			break;
 
+		case mSave:
+			pause = true;
+			SaveGame();
+			pause = false;
+			break;
 
+		case mLoad:
+			pause = true;
+			LoadGame();
+			pause = false;
+			break;
 
-
-
+		case mHoF:
+			pause = true;
+			HallOfFame();
+			pause = false;
+			break;
 		}
 		break;
 
@@ -969,11 +1127,11 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance
 				FRECT temp_dims{ Grid->get_dims(8, i) };
 				float line_x = temp_dims.left;
 				if (i % 3 == 0)Draw->DrawLine(D2D1::Point2F(line_x, sky + 5.0f), 
-					D2D1::Point2F(line_x, temp_dims.down), gridBrush, 3.0f);
+					D2D1::Point2F(line_x, temp_dims.down), gridBrush, 5.0f);
 				else Draw->DrawLine(D2D1::Point2F(line_x, sky + 5.0f), D2D1::Point2F(line_x, temp_dims.down), gridBrush);
 			
 				if (i == 8)Draw->DrawLine(D2D1::Point2F(temp_dims.right, sky + 5.0f),
-					D2D1::Point2F(temp_dims.right, temp_dims.down), gridBrush, 3.0f);
+					D2D1::Point2F(temp_dims.right, temp_dims.down), gridBrush, 5.0f);
 			}
 		}
 
