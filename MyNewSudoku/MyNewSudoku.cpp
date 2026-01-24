@@ -73,6 +73,7 @@ bool b2Hglt = false;
 bool b3Hglt = false;
 
 bool turn_the_game = false;
+bool level_skipped = false;
 
 wchar_t current_player[16]{ L"TARLYO" };
 
@@ -282,12 +283,26 @@ void InitGame()
 	mins = 0;
 	secs = 0;
 
+	level_skipped = false;
+
 	if (Grid)delete Grid;
 	Grid = new dll::GRID();
 	Grid->set_level(1);
 }
 void LevelUp()
 {
+	if (level + 1 > 5 && !level_skipped)
+	{
+		turn_the_game = true;
+		GameOver();
+	}
+	else if (level + 1 > 5)
+	{
+		if (sound)mciSendString(L"play .\\res\\snd\\negative.wav", NULL, NULL, NULL);
+		MessageBox(bHwnd, L"Няма повече нива !", L"Последно ниво", MB_OK | MB_APPLMODAL | MB_ICONERROR);
+		return;
+	}
+	
 	Draw->BeginDraw();
 	if (bmpLogo)Draw->DrawBitmap(bmpLevelUp, D2D1::RectF(0, 0, scr_width, scr_height));
 	Draw->EndDraw();
@@ -300,18 +315,16 @@ void LevelUp()
 	}
 	else Sleep(3000);
 
-	int time_needed = 300 * level;
-	if (time_needed - secs > 0)score += 50 * level + time_needed - secs;
-	else score += 50 * level;
-
-	++level;
-	
-	if (level > 5)
+	if (!level_skipped)
 	{
-		turn_the_game = true;
-		GameOver();
+		int time_needed = 300 * level;
+		if (time_needed - secs > 0)score += 50 * level + time_needed - secs;
+		else score += 50 * level;
 	}
 
+	++level;
+	level_skipped = false;
+	
 	mins = 0;
 	secs = 0;
 
@@ -387,6 +400,7 @@ void SaveGame()
 	save << score << std::endl;
 	save << mins << std::endl;
 	save << secs << std::endl;
+	save << level_skipped << std::endl;
 
 	for (int i = 0; i < 16; ++i)save << static_cast<int>(current_player[i]) << std::endl;
 	save << name_set << std::endl;
@@ -434,6 +448,7 @@ void LoadGame()
 	save >> score;
 	save >> mins;
 	save >> secs;
+	save >> level_skipped;
 
 	for (int i = 0; i < 16; ++i)
 	{
@@ -736,6 +751,7 @@ LRESULT CALLBACK WinProc(HWND hwnd, UINT ReceivedMsg, WPARAM wParam, LPARAM lPar
 				pause = false;
 				break;
 			}
+			level_skipped = true;
 			LevelUp();
 			break;
 
@@ -1110,7 +1126,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance
 
 	while (bMsg.message != WM_QUIT)
 	{
-		if ((bRet = PeekMessage(&bMsg, bHwnd, NULL, NULL, PM_REMOVE)) != 0)
+		if ((bRet = PeekMessage(&bMsg, nullptr, NULL, NULL, PM_REMOVE)) != 0)
 		{
 			if (bRet == -1)ErrExit(eMsg);
 
